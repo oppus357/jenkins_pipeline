@@ -1,0 +1,24 @@
+pipeline {
+    agent any
+    environment {
+        SSH_KEY = credentials('Jenkins-SSH')
+        SERVER_IP = '192.168.1.246'
+        DOCKER_COMPOSE_PATH = '/home/sas/'
+    }
+    parameters{
+        choice(
+        choices: ['up -d', 'down', 'ps'],
+        name: 'ACTION'
+        )
+    }
+    stages {
+        stage('Docker Compose Up') {
+            steps {
+                sshagent(credentials: ['Jenkins-SSH']) {
+                    sh "ssh root@${SERVER_IP} -p 8288 'cd ${DOCKER_COMPOSE_PATH} && docker-compose ${params.ACTION}'"
+                }
+            }
+        }
+        
+    }
+}
