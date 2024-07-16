@@ -1,0 +1,30 @@
+- name: Create sudoers user with passwordless sudo
+  hosts: vm-blasting-biz-geo
+  tasks:
+    - name: Add sudoers admin anto
+      user:
+        name: anto
+        shell: /bin/bash
+
+    - name: Create sudoers.d directory
+      file:
+        path: /etc/sudoers.d
+        state: directory
+
+    - name: Create sudo file
+      file:
+        path: /etc/sudoers.d/anto
+        state: touch
+
+    - name: Give sudoers anto passwordless sudo
+      lineinfile:
+        path: /etc/sudoers.d/anto
+        state: present
+        line: 'anto ALL= NOPASSWD:ALL'
+        validate: "/usr/sbin/visudo -cf %s"
+
+    - name: Set authorized key taken from file
+      authorized_key:
+        user: anto
+        state: present
+        key: "{{ lookup('file', '/srv/key/anto/anto.pub') }}"
