@@ -1,0 +1,4 @@
+[Dev12-192.168.4.25]
+stag-interpack-1-159            ansible_host=192.168.1.159      ansible_port=8288
+proxy-manager-master            ansible_host=192.168.1.214      ansible_port=8288
+proxy-manager-slave             ansible_host=192.168.1.218      ansible_port=8288
