@@ -1,0 +1,14 @@
+- name: Configure shell history with timestamps
+  hosts: Ubuntu-stag-ghost-1.246
+  become: yes
+  tasks:
+    - name: Set history timestamp for all users
+      lineinfile:
+        path: "/etc/bash.bashrc"
+        line: "export HISTTIMEFORMAT='%F %T '"
+        state: present
+        
+    - name: Reload shell for all users
+      shell: "source /etc/bash.bashrc"
+      args:
+        executable: /bin/bash
