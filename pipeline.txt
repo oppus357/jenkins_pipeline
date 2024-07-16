@@ -1,24 +1,79 @@
 pipeline {
-    agent any
     environment {
-        SSH_KEY = credentials('Jenkins-SSH')
-        SERVER_IP = '192.168.1.246'
-        DOCKER_COMPOSE_PATH = '/home/sas/'
-    }
-    parameters{
-        choice(
-        choices: ['up -d', 'down', 'ps'],
-        name: 'ACTION'
-        )
-    }
+        GitURL = 'https://getlib.aegisnet.info/jeffry/nudrv-go-green.git'
+        GitBranch = 'development'
+        telegramToken = credentials('telegramToken')
+        telegramIddevops = credentials('teleJenkinsDevopsID')
+        telegramIdservice = -1002081757800
+        Notife_Mail = 'namasayajev@gmail.com , hasyidanparamananda@gmail.com, pt.aegis@gmail.com, irsan00mansyur@gmail.com'    }
+    agent any
     stages {
-        stage('Docker Compose Up') {
+        stage('Cloning The Project From Git Repository') {
             steps {
-                sshagent(credentials: ['Jenkins-SSH']) {
-                    sh "ssh root@${SERVER_IP} -p 8288 'cd ${DOCKER_COMPOSE_PATH} && docker-compose ${params.ACTION}'"
+                git branch: "${GitBranch}",
+                    credentialsId: 'Getlib-Repositry-Cred',
+                    url: "${GitURL}"
+            }
+        }
+        stage('Print Commit Message') {
+            steps {
+                script {
+                    // Periksa terlebih dahulu apakah direktori kerja adalah direktori Git
+                    if (fileExists('.git')) {
+                        // Jalankan perintah git hanya jika direktori kerja adalah direktori Git
+                        gitCommitInfo = sh(script: 'git log -1 --pretty=%an=%ae=%cD=%B', returnStdout: true).trim()
+
+                        // Splitting the commit information into separate variables
+                        commitDetails = gitCommitInfo.split('=')
+                        authorName = commitDetails[0].trim()
+                        authorEmail = commitDetails[1].trim()
+                        commitDate = commitDetails[2].trim()
+                        commitMessage = commitDetails[3].trim()
+                    } else {
+                        echo "Not a git repository. Skipping git command."
+                    }
                 }
             }
         }
-        
+
+        stage('SSH to Server') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'ssh-credentials', keyFileVariable: 'SSH_PRIVATE_KEY', passphraseVariable: 'SSH_PASSPHRASE')]) {
+                    /*script {
+                        // Ganti 'cd /var/www/html/nudrv-go-green' dengan direktori yang benar di server Anda
+                        sh """
+                            ssh -p 8288 -i \$SSH_PRIVATE_KEY -o 'StrictHostKeyChecking=no' root@192.168.1.68 'cd /var/www/html/nudrv-go-green && git stash && git pull origin development'
+                        """
+                    }*/
+                    script {
+                        // Ganti 'cd /var/www/html/nudrv-go-green' dengan direktori yang benar di server Anda
+                        sh """
+                            ssh -p 8288 -i \$SSH_PRIVATE_KEY -o 'StrictHostKeyChecking=no' root@192.168.1.78 'cd /var/www/html/nudrv-go-green && git stash && git pull origin development && systemctl restart nginx'
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            emailext attachmentsPattern: 'report', body: '''${SCRIPT, template="groovy-html.template"}''', compressLog: true, subject: 'Congratulations, your build succeeded!', to: "${Notife_Mail}"
+            script{
+                // Ubah format menjadi single quotes di bawah ini
+                def updateDetails = sh(script: "git log -1 --pretty=format:'%h - %s [%an]'", returnStdout: true).trim()
+                def telegramMessage = "JOB ${JOB_NAME} is SUCCESS\n=========================\nAuthor: ${authorName}\nEmail: ${authorEmail}\nMessage: \n${commitMessage}\nUpdate Details:\n${updateDetails}\n=========================\nCheck log by :\n${BUILD_URL}consoleText"
+                sh "curl --location --request POST 'https://api.telegram.org/bot${telegramToken}/sendMessage' --form text='JOB ${JOB_NAME} is SUCCESS\n=========================\nAuthor: ${authorName}\nEmail: ${authorEmail}\nMessage: \n${commitMessage}\n=========================\nCheck log by :\n${BUILD_URL}consoleText' --form chat_id='${telegramIddevops}'"
+            }
+        }
+        failure {
+            emailext attachmentsPattern: 'report', attachLog: true, body: '''${SCRIPT, template="groovy-html.template"}''', compressLog: true, subject: 'Your build has issues.', to: "${Notife_Mail}"
+            script{
+                // Ubah format menjadi single quotes di bawah ini
+                def updateDetails = sh(script: "git log -1 --pretty=format:'%h - %s [%an]'", returnStdout: true).trim()
+                def telegramMessage = "JOB ${JOB_NAME} is FAILURE\n\n=========================\nAuthor: ${authorName}\nEmail: ${authorEmail}\nMessage: \n${commitMessage}\nUpdate Details:\n${updateDetails}\n=========================\nCheck log by :\n${BUILD_URL}consoleText"
+                sh "curl --location --request POST 'https://api.telegram.org/bot${telegramToken}/sendMessage' --form text='JOB ${JOB_NAME} is FAILURE\n\n=========================\nAuthor: ${authorName}\nEmail: ${authorEmail}\nMessage: \n${commitMessage}\n=========================\nCheck log by :\n${BUILD_URL}consoleText' --form chat_id='${telegramIddevops}'"
+            }
+        }
     }
 }
