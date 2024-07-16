@@ -1,0 +1,13 @@
+- name: Open acces user sudoers
+  hosts: nudrv
+  tasks:
+    - name: Periode 
+      shell: chage -E $(date -d +4days +%Y-%m-%d) jeffry
+
+    - name: print
+      shell: chage -l jeffry
+      register: command_output
+
+    - name: Print to console chage jeffry
+      debug:
+        msg: "{{command_output.stdout}}" 
