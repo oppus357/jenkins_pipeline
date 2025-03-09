@@ -1,0 +1,131 @@
+pipeline {
+    environment {
+        Registry = "dockreg.aegisnet.info:5000/mebook/fe-erp-testing"
+        RegistryURL = 'https://dockreg.aegisnet.info:5000'
+        RegistryCredential = 'Dockreg-Registry-Cred'
+        GitURL = 'https://getlib.aegisnet.info/erp/erp_project.git'
+        GitBranch = 'development'
+        APP_ServiceName = 'fe-erp-azsolusindo'
+        Notife_Mail = 'edi@azsolusindo.info , erp.teams17@gmail.com , pt.aegis@gmail.com , d3velops@gmail.com , alfidmohamad@gmail.com'
+    }
+    agent any
+    stages {
+        stage('Cloning The Project From Git Repository') {
+            steps {
+                git branch: "${GitBranch}",
+                    credentialsId: 'Getlib-Repositry-Cred',
+                    url: "${GitURL}"
+            }
+        }
+        stage('Build Image1 Containerization And Push Registry') {
+            steps {
+                script {
+                    sh """
+                        cd \${WORKSPACE}/
+                        tee '''Dockerfile''' << EOF
+                        FROM alpine:3.14
+                        RUN apk update && apk add --no-cache \
+                            nginx \
+                            php7 php7-calendar php7-ctype php7-exif php7-fileinfo php7-ftp php7-gettext php7-pcntl php7-pdo_mysql php7-pdo_sqlite \
+                            php7-posix php7-shmop php7-simplexml php7-sockets php7-sodium php7-sqlite3 php7-sysvmsg php7-sysvsem php7-sysvshm \
+                            php7-xmlreader php7-xsl \
+                            php7-cli \
+                            php7-fpm \
+                            php7-mysqlnd \
+                            php7-zip \
+                            php7-dev \
+                            php7-mcrypt \
+                            php7-mbstring \
+                            php7-curl \
+                            php7-pear \
+                            php7-json \
+                            php7-curl \
+                            php7-bcmath \
+                            php7-json \
+                            php7-gd \
+                            php7-dom \
+                            php7-bcmath \
+                            php7-xml \
+                            php7-xmlwriter \
+                            php7-tokenizer \
+                            php7-pdo \
+                            php7-session \
+                            php7-opcache \
+                            php7-mysqli \
+                            php7-bz2 \
+                            composer
+                        ENV TZ=Asia/Jakarta
+                        WORKDIR /var/www/erp_project
+                        COPY . .
+                        RUN composer require --with-all-dependencies guzzlehttp/psr7
+                        RUN composer update --with-all-dependencies
+                        RUN composer update
+                        RUN chmod -R 775 /var/www/erp_project
+                        RUN chown -R root:nginx /var/www/erp_project
+                        RUN mkdir -p /var/lib/php7/session && chown -R root:nginx /var/lib/php7/session
+                        RUN chown -R root:nginx /var/lib/php7
+                        RUN chmod -R 770 /var/lib/php7
+                        RUN wget --no-check-certificate "https://ssl-config.mozilla.org/ffdhe4096.txt" -O /etc/nginx/dhparam.pem
+                        CMD ["sh", "-c", "php-fpm7 && nginx -g 'daemon off;'"]
+                        """
+                    sh  """  
+                        tee .dockerignore << EOF
+                        npm-debug.log
+                        Dockerfile
+                        docker-compose.yml
+                        .git
+                        .gitignore
+                        .npmrc
+                        """
+                }
+                
+                script {
+                    dockerImage = docker.build registry + ":v.${BUILD_NUMBER}", "--no-cache ."
+                }
+                script {
+                    docker.withRegistry("${RegistryURL}", RegistryCredential ) {
+                        dockerImage.push()
+                        dockerImage.push('latest')
+                    }
+                }
+                script {
+                    sh "docker rmi ${Registry}:v.${BUILD_NUMBER}"
+                    sh "docker rmi ${Registry}:latest"
+                }
+            }
+        }
+        stage ('Deploy service FE to Production Server') {
+            steps{
+                sshagent(credentials : ['Jenkins-SSH']) {
+                    script {
+                        sh 'ssh -o StrictHostKeyChecking=no root@192.168.1.129 -p 8288 "cd /srv/erp-testing && docker-compose pull"'
+                    }
+                    script {
+                        sh 'ssh -o StrictHostKeyChecking=no root@192.168.1.129 -p 8288 "cd /srv/erp-testing && docker-compose up -d && sleep 10"'
+                    }
+                    script {
+                        sh 'ssh -o StrictHostKeyChecking=no root@192.168.1.129 -p 8288 "docker image prune -f"'
+                    }
+                }
+            }
+        }
+        
+    }
+        post {
+            success {
+                    emailext attachmentsPattern: 'report/*', body: '''${SCRIPT, template="groovy-html.template"}''', compressLog: true, subject: 'Congratulations, your build succeded!', to: "${Notife_Mail}"
+            }
+            failure {
+                    emailext attachmentsPattern: 'report/*', attachLog: true, body: '''${SCRIPT, template="groovy-html.template"}''', compressLog: true, subject: 'Your build has issues.', to: "${Notife_Mail}"
+            }
+            // Clean after build
+            always {
+            cleanWs(cleanWhenNotBuilt: false,
+                    deleteDirs: true,
+                    disableDeferredWipeout: true,
+                    notFailBuild: true,
+                    patterns: [[pattern: '.gitignore', type: 'INCLUDE'],
+                               [pattern: '.propsfile', type: 'EXCLUDE']])
+                   }
+       }
+}
